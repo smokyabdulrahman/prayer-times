@@ -1,20 +1,23 @@
-BINARY_NAME := tmux-prayer-times
-CMD_PATH    := ./cmd/tmux-prayer-times
-BIN_DIR     := bin
-DIST_DIR    := dist
+BINARY_NAME  := prayer-times
+ALIAS_NAME   := pt
+CMD_PATH     := ./cmd/prayer-times
+ALIAS_PATH   := ./cmd/pt
+BIN_DIR      := bin
+DIST_DIR     := dist
 
-VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS     := -s -w -X main.version=$(VERSION)
+VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS      := -s -w -X main.version=$(VERSION)
 
-PLATFORMS   := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+PLATFORMS    := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
-.PHONY: build test vet clean release install
+.PHONY: build test vet clean release install help
 
-## build: compile for the current platform
+## build: compile both binaries for the current platform
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_PATH)
-	@echo "Built $(BIN_DIR)/$(BINARY_NAME)"
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(ALIAS_NAME) $(ALIAS_PATH)
+	@echo "Built $(BIN_DIR)/$(BINARY_NAME) and $(BIN_DIR)/$(ALIAS_NAME)"
 
 ## test: run all tests with race detector
 test:
@@ -38,8 +41,10 @@ release: clean
 		echo "Building $${output}..."; \
 		GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=0 \
 			go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME) $(CMD_PATH); \
-		tar -czf $(DIST_DIR)/$${output}.tar.gz -C $(DIST_DIR) $(BINARY_NAME); \
-		rm $(DIST_DIR)/$(BINARY_NAME); \
+		GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=0 \
+			go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(ALIAS_NAME) $(ALIAS_PATH); \
+		tar -czf $(DIST_DIR)/$${output}.tar.gz -C $(DIST_DIR) $(BINARY_NAME) $(ALIAS_NAME); \
+		rm $(DIST_DIR)/$(BINARY_NAME) $(DIST_DIR)/$(ALIAS_NAME); \
 	done
 	@cd $(DIST_DIR) && shasum -a 256 *.tar.gz > checksums.txt
 	@echo "Release artifacts in $(DIST_DIR)/:"
@@ -47,8 +52,7 @@ release: clean
 
 ## install: build and install to plugin bin/ for local testing
 install: build
-	@echo "Binary ready at $(BIN_DIR)/$(BINARY_NAME)"
-	@echo "To test in tmux, run:  ./prayer-times.tmux"
+	@echo "Binaries ready at $(BIN_DIR)/$(BINARY_NAME) and $(BIN_DIR)/$(ALIAS_NAME)"
 
 ## help: show this help
 help:

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aalrahma/tmux-prayer-times/internal/api"
-	"github.com/aalrahma/tmux-prayer-times/internal/geo"
+	"github.com/smokyabdulrahman/prayer-times/internal/api"
+	"github.com/smokyabdulrahman/prayer-times/internal/geo"
 )
 
 func sampleAPIResponse() *api.Response {

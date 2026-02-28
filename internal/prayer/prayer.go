@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aalrahma/tmux-prayer-times/internal/api"
+	"github.com/smokyabdulrahman/prayer-times/internal/api"
 )
 
 // Prayer represents a single prayer with its name and time.

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aalrahma/tmux-prayer-times/internal/api"
-	"github.com/aalrahma/tmux-prayer-times/internal/geo"
+	"github.com/smokyabdulrahman/prayer-times/internal/api"
+	"github.com/smokyabdulrahman/prayer-times/internal/geo"
 )
 
 const (
@@ -39,14 +39,14 @@ type GeoCacheEntry struct {
 }
 
 // New creates a Cache rooted at the given directory.
-// If dir is empty, it defaults to ~/.cache/tmux-prayer-times/.
+// If dir is empty, it defaults to ~/.cache/prayer-times/.
 func New(dir string) (*Cache, error) {
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("cannot determine home directory: %w", err)
 		}
-		dir = filepath.Join(home, ".cache", "tmux-prayer-times")
+		dir = filepath.Join(home, ".cache", "prayer-times")
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {

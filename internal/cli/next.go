@@ -1,106 +1,37 @@
-package main
+package cli
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/aalrahma/tmux-prayer-times/internal/api"
-	"github.com/aalrahma/tmux-prayer-times/internal/cache"
-	"github.com/aalrahma/tmux-prayer-times/internal/geo"
-	"github.com/aalrahma/tmux-prayer-times/internal/prayer"
+	"github.com/smokyabdulrahman/prayer-times/internal/api"
+	"github.com/smokyabdulrahman/prayer-times/internal/cache"
+	"github.com/smokyabdulrahman/prayer-times/internal/geo"
+	"github.com/smokyabdulrahman/prayer-times/internal/prayer"
+	"github.com/spf13/cobra"
 )
 
-// version is set at build time via ldflags:
-//
-//	go build -ldflags "-X main.version=v1.0.0"
-var version = "dev"
+var (
+	flagFormat     string
+	flagTimeFormat string
+	flagPrayers    string
+)
 
-// calculationMethods lists all supported Al Adhan API calculation methods.
-var calculationMethods = []struct {
-	ID   int
-	Name string
-}{
-	{0, "Shia Ithna-Ashari (Jafari)"},
-	{1, "University of Islamic Sciences, Karachi"},
-	{2, "Islamic Society of North America (ISNA)"},
-	{3, "Muslim World League (MWL)"},
-	{4, "Umm Al-Qura University, Makkah"},
-	{5, "Egyptian General Authority of Survey"},
-	{7, "Institute of Geophysics, University of Tehran"},
-	{8, "Gulf Region"},
-	{9, "Kuwait"},
-	{10, "Qatar"},
-	{11, "Majlis Ugama Islam Singapura (Singapore)"},
-	{12, "Union Organization Islamic de France"},
-	{13, "Diyanet Isleri Baskanligi, Turkey (experimental)"},
-	{14, "Spiritual Administration of Muslims of Russia"},
-	{15, "Moonsighting Committee Worldwide"},
-	{16, "Dubai (experimental)"},
-	{17, "JAKIM (Malaysia)"},
-	{18, "Tunisia"},
-	{19, "Algeria"},
-	{20, "KEMENAG (Indonesia)"},
-	{21, "Morocco"},
-	{22, "Comunidade Islamica de Lisboa (Portugal)"},
-	{23, "Ministry of Awqaf, Jordan"},
-}
-
-func main() {
-	// Location flags
-	latitude := flag.Float64("latitude", 0, "Latitude for prayer time calculation")
-	longitude := flag.Float64("longitude", 0, "Longitude for prayer time calculation")
-	city := flag.String("city", "", "City name (alternative to coordinates)")
-	country := flag.String("country", "", "Country code (used with --city)")
-
-	// Calculation flags
-	method := flag.Int("method", -1, "Calculation method ID (0-23). -1 for API default.")
-	school := flag.Int("school", -1, "Juristic school: 0=Shafi, 1=Hanafi. -1 for API default.")
-
-	// Display flags
-	format := flag.String("format", prayer.FormatNameAndTime, "Display format: time-remaining, next-prayer-time, name-and-time, name-and-remaining, short-name-and-time, short-name-and-remaining, full, or a custom Go template (e.g. '{{.Name}} in {{.Remaining}}'). Template fields: .Name, .ShortName, .Time, .Remaining, .Hours, .Minutes")
-	timeFormat := flag.String("time-format", "24h", "Time format: 12h or 24h")
-	prayers := flag.String("prayers", "", "Comma-separated list of prayers to track (default: Fajr,Sunrise,Dhuhr,Asr,Maghrib,Isha)")
-
-	// Cache flags
-	cacheDir := flag.String("cache-dir", "", "Cache directory (default: ~/.cache/tmux-prayer-times/)")
-
-	// Info flags
-	showVersion := flag.Bool("version", false, "Print version and exit")
-	listMethods := flag.Bool("list-methods", false, "Print supported calculation methods and exit")
-
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("tmux-prayer-times %s\n", version)
-		return
+func newNextCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "next",
+		Short: "Show the next prayer with countdown",
+		Long:  "Display the next upcoming prayer time with a countdown.\nThis is equivalent to the old tmux-prayer-times default behavior.",
+		RunE:  runNext,
 	}
 
-	if *listMethods {
-		printMethods()
-		return
-	}
+	cmd.Flags().StringVar(&flagFormat, "format", prayer.FormatFull, "Display format: time-remaining, next-prayer-time, name-and-time, name-and-remaining, short-name-and-time, short-name-and-remaining, full, or a custom Go template")
+	cmd.Flags().StringVar(&flagTimeFormat, "time-format", "24h", "Time format: 12h or 24h")
+	cmd.Flags().StringVar(&flagPrayers, "prayers", "", "Comma-separated list of prayers to track (default: Fajr,Sunrise,Dhuhr,Asr,Maghrib,Isha)")
 
-	if err := run(*latitude, *longitude, *city, *country, *method, *school, *format, *timeFormat, *prayers, *cacheDir); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-// printMethods prints the table of supported calculation methods.
-func printMethods() {
-	fmt.Println("Supported calculation methods:")
-	fmt.Println()
-	fmt.Printf("  %-4s %s\n", "ID", "Name")
-	fmt.Printf("  %-4s %s\n", "──", "────")
-	for _, m := range calculationMethods {
-		fmt.Printf("  %-4d %s\n", m.ID, m.Name)
-	}
-	fmt.Println()
-	fmt.Println("Use --method <ID> to select a calculation method.")
-	fmt.Println("If omitted, the API picks a default based on your location.")
+	return cmd
 }
 
 // locationMode describes how the user specified their location.
@@ -112,11 +43,11 @@ const (
 	locationAuto
 )
 
-func run(lat, lon float64, city, country string, method, school int, format, timeFmt, prayersFlag, cacheDir string) error {
+func runNext(cmd *cobra.Command, args []string) error {
 	// Determine which prayers to track.
 	selectedPrayers := prayer.DefaultPrayerNames
-	if prayersFlag != "" {
-		selectedPrayers = strings.Split(prayersFlag, ",")
+	if flagPrayers != "" {
+		selectedPrayers = strings.Split(flagPrayers, ",")
 		for i := range selectedPrayers {
 			selectedPrayers[i] = strings.TrimSpace(selectedPrayers[i])
 		}
@@ -124,12 +55,12 @@ func run(lat, lon float64, city, country string, method, school int, format, tim
 
 	// Determine time format string.
 	goTimeFmt := "15:04" // 24h
-	if timeFmt == "12h" {
+	if flagTimeFormat == "12h" {
 		goTimeFmt = "3:04 PM"
 	}
 
 	// Initialize cache.
-	c, err := cache.New(cacheDir)
+	c, err := cache.New(FlagCacheDir)
 	if err != nil {
 		// Cache init failure is non-fatal; we just skip caching.
 		c = nil
@@ -139,13 +70,13 @@ func run(lat, lon float64, city, country string, method, school int, format, tim
 	now := time.Now()
 
 	// Resolve location mode and coordinates.
-	mode, lat, lon, city, country, tz, err := resolveLocation(lat, lon, city, country, c)
+	mode, lat, lon, city, country, tz, err := resolveLocation(FlagLatitude, FlagLongitude, FlagCity, FlagCountry, c)
 	if err != nil {
 		return err
 	}
 
 	// Fetch today's timings (from cache or API).
-	timings, meta, err := fetchTimings(now, mode, lat, lon, city, country, method, school, c)
+	timings, meta, err := fetchTimings(now, mode, lat, lon, city, country, FlagMethod, FlagSchool, c)
 	if err != nil {
 		return err
 	}
@@ -177,7 +108,7 @@ func run(lat, lon float64, city, country string, method, school int, format, tim
 	if next == nil {
 		tomorrow := today.AddDate(0, 0, 1)
 
-		tTimings, _, fetchErr := fetchTimings(tomorrow, mode, lat, lon, city, country, method, school, c)
+		tTimings, _, fetchErr := fetchTimings(tomorrow, mode, lat, lon, city, country, FlagMethod, FlagSchool, c)
 		if fetchErr != nil {
 			// Network failure for tomorrow's data: show last prayer with
 			// a "done" indicator rather than crashing the status bar.
@@ -204,7 +135,7 @@ func run(lat, lon float64, city, country string, method, school int, format, tim
 	}
 
 	// Format and print.
-	output := prayer.FormatOutput(*next, now, format, goTimeFmt)
+	output := prayer.FormatOutput(*next, now, flagFormat, goTimeFmt)
 	fmt.Print(output)
 
 	return nil

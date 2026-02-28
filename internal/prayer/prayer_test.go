@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aalrahma/tmux-prayer-times/internal/api"
+	"github.com/smokyabdulrahman/prayer-times/internal/api"
 )
 
 // helper to build a time.Time on a given date in UTC.
