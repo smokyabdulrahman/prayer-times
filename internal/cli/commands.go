@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -87,6 +88,10 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if FlagJSON {
+		return printConfigJSON(cfg, path)
+	}
+
 	fmt.Printf("  Configuration (%s)\n\n", path)
 
 	for _, key := range config.ValidKeys {
@@ -104,6 +109,35 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("  %-14s %s\n", key, display)
 	}
+	return nil
+}
+
+// configJSON is the JSON output structure for the config command.
+type configJSON struct {
+	Path   string            `json:"path"`
+	Values map[string]string `json:"values"`
+}
+
+// printConfigJSON outputs the current configuration as JSON.
+func printConfigJSON(cfg *config.Config, path string) error {
+	values := make(map[string]string)
+	for _, key := range config.ValidKeys {
+		val, _ := cfg.Get(key)
+		if val != "" {
+			values[key] = val
+		}
+	}
+
+	out := configJSON{
+		Path:   path,
+		Values: values,
+	}
+
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -205,6 +239,10 @@ func newMethodsCmd() *cobra.Command {
 		Short: "List all calculation methods",
 		Long:  "Print the table of all supported Al Adhan API calculation methods.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if FlagJSON {
+				return printMethodsJSON()
+			}
+
 			fmt.Println("Supported calculation methods:")
 			fmt.Println()
 			fmt.Printf("  %-4s %s\n", "ID", "Name")
@@ -218,4 +256,25 @@ func newMethodsCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// methodJSON is the JSON structure for a single calculation method.
+type methodJSON struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// printMethodsJSON outputs the calculation methods as a JSON array.
+func printMethodsJSON() error {
+	methods := make([]methodJSON, len(CalculationMethods))
+	for i, m := range CalculationMethods {
+		methods[i] = methodJSON{ID: m.ID, Name: m.Name}
+	}
+
+	data, err := json.MarshalIndent(methods, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
 }

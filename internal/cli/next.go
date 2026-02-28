@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -14,8 +15,7 @@ import (
 )
 
 var (
-	flagFormat  string
-	flagPrayers string
+	flagFormat string
 )
 
 func newNextCmd() *cobra.Command {
@@ -27,7 +27,6 @@ func newNextCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flagFormat, "format", prayer.FormatFull, "Display format: time-remaining, next-prayer-time, name-and-time, name-and-remaining, short-name-and-time, short-name-and-remaining, full, or a custom Go template")
-	cmd.Flags().StringVar(&flagPrayers, "prayers", "", "Comma-separated list of prayers to track (overrides config)")
 
 	return cmd
 }
@@ -62,14 +61,9 @@ func runNext(cmd *cobra.Command, args []string) error {
 	cfg := effectiveConfig(cmd)
 
 	// Determine which prayers to track.
-	// Priority: --prayers flag > config > defaults.
+	// Priority: --prayers flag > config > defaults (handled by effectiveConfig).
 	selectedPrayers := prayer.DefaultPrayerNames
-	if cmd.Flags().Changed("prayers") && flagPrayers != "" {
-		selectedPrayers = strings.Split(flagPrayers, ",")
-		for i := range selectedPrayers {
-			selectedPrayers[i] = strings.TrimSpace(selectedPrayers[i])
-		}
-	} else if cfg.Prayers != "" {
+	if cfg.Prayers != "" {
 		selectedPrayers = strings.Split(cfg.Prayers, ",")
 		for i := range selectedPrayers {
 			selectedPrayers[i] = strings.TrimSpace(selectedPrayers[i])
@@ -164,11 +158,34 @@ func runNext(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("could not determine next prayer")
 	}
 
+	// JSON output.
+	if FlagJSON {
+		remaining := prayer.FormatRemaining(prayer.TimeRemaining(*next, now))
+		out := nextJSON{
+			Prayer:    strings.ToLower(next.Name),
+			Time:      next.Time.Format(goTimeFmt),
+			Remaining: remaining,
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
 	// Format and print.
 	output := prayer.FormatOutput(*next, now, flagFormat, goTimeFmt)
 	fmt.Print(output)
 
 	return nil
+}
+
+// nextJSON is the JSON output structure for the next command.
+type nextJSON struct {
+	Prayer    string `json:"prayer"`
+	Time      string `json:"time"`
+	Remaining string `json:"remaining"`
 }
 
 // resolveLocation determines the effective location based on user flags, config, or auto-detection.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/smokyabdulrahman/prayer-times/internal/config"
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ var (
 	FlagJSON       bool
 	FlagCacheDir   string
 	FlagTimeFormat string
+	FlagPrayers    string
 )
 
 // loadedConfig holds the config loaded during PersistentPreRunE.
@@ -58,6 +60,7 @@ func NewRootCmd(version string) *cobra.Command {
 	pf.BoolVar(&FlagJSON, "json", false, "Output as JSON (where supported)")
 	pf.StringVar(&FlagCacheDir, "cache-dir", "", "Cache directory (default: ~/.cache/prayer-times/)")
 	pf.StringVar(&FlagTimeFormat, "time-format", "", "Time format: 12h or 24h (overrides config)")
+	pf.StringVar(&FlagPrayers, "prayers", "", "Comma-separated list of prayers to track (overrides config)")
 
 	// Register subcommands.
 	rootCmd.AddCommand(newNextCmd())
@@ -67,6 +70,7 @@ func NewRootCmd(version string) *cobra.Command {
 	rootCmd.AddCommand(newQueryCmd())
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newMethodsCmd())
+	rootCmd.AddCommand(newCompletionCmd())
 
 	return rootCmd
 }
@@ -130,6 +134,11 @@ func effectiveConfig(cmd *cobra.Command) *config.Config {
 		cfg.TimeFormat = defaults.TimeFormat
 	}
 
+	// Prayers: CLI flag > config > leave empty (commands default to DefaultPrayerNames).
+	if flagWasSet(flags, root, "prayers") {
+		cfg.Prayers = FlagPrayers
+	}
+
 	return cfg
 }
 
@@ -142,4 +151,56 @@ func flagWasSet(local, persistent *pflag.FlagSet, name string) bool {
 		return true
 	}
 	return false
+}
+
+// newCompletionCmd creates the completion subcommand for shell auto-completion.
+func newCompletionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion [bash|zsh|fish|powershell]",
+		Short: "Generate shell completion script",
+		Long: `Generate a shell completion script for the specified shell.
+
+To load completions:
+
+Bash:
+  $ source <(prayer-times completion bash)
+  # To load completions for each session, execute once:
+  # Linux:
+  $ prayer-times completion bash > /etc/bash_completion.d/prayer-times
+  # macOS:
+  $ prayer-times completion bash > $(brew --prefix)/etc/bash_completion.d/prayer-times
+
+Zsh:
+  $ source <(prayer-times completion zsh)
+  # To load completions for each session, execute once:
+  $ prayer-times completion zsh > "${fpath[1]}/_prayer-times"
+
+Fish:
+  $ prayer-times completion fish | source
+  # To load completions for each session, execute once:
+  $ prayer-times completion fish > ~/.config/fish/completions/prayer-times.fish
+
+PowerShell:
+  PS> prayer-times completion powershell | Out-String | Invoke-Expression
+  # To load completions for each session, add the output to your profile.
+`,
+		DisableFlagsInUseLine: true,
+		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				return cmd.Root().GenBashCompletion(os.Stdout)
+			case "zsh":
+				return cmd.Root().GenZshCompletion(os.Stdout)
+			case "fish":
+				return cmd.Root().GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+			default:
+				return fmt.Errorf("unsupported shell: %s", args[0])
+			}
+		},
+	}
+	return cmd
 }

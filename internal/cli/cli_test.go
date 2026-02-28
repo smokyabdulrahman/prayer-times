@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -397,5 +398,201 @@ func TestConfigPath_XDG(t *testing.T) {
 	expected := filepath.Join(configDir, "prayer-times", "config.json")
 	if path != expected {
 		t.Errorf("config path = %q, want %q", path, expected)
+	}
+}
+
+// TestMethodsJSON verifies that 'methods --json' outputs valid JSON with all methods.
+func TestMethodsJSON(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "methods", "--json").Output()
+	if err != nil {
+		t.Fatalf("methods --json failed: %v", err)
+	}
+
+	// Verify valid JSON.
+	var methods []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &methods); err != nil {
+		t.Fatalf("methods --json output is not valid JSON: %v\nOutput: %s", err, out)
+	}
+
+	// Should have all calculation methods.
+	if len(methods) != len(CalculationMethods) {
+		t.Errorf("methods --json returned %d methods, want %d", len(methods), len(CalculationMethods))
+	}
+
+	// Spot check a few known methods.
+	found := make(map[int]string)
+	for _, m := range methods {
+		found[m.ID] = m.Name
+	}
+	if name, ok := found[2]; !ok || !strings.Contains(name, "ISNA") {
+		t.Errorf("methods --json missing ISNA (ID 2), got: %v", found[2])
+	}
+	if name, ok := found[4]; !ok || !strings.Contains(name, "Umm Al-Qura") {
+		t.Errorf("methods --json missing Umm Al-Qura (ID 4), got: %v", found[4])
+	}
+}
+
+// TestConfigJSON verifies that 'config --json' outputs valid JSON.
+func TestConfigJSON(t *testing.T) {
+	binPath := buildBinary(t, "")
+	configDir := t.TempDir()
+
+	// Set some values first.
+	runWithConfig(t, binPath, configDir, "config", "set", "city", "Mecca")
+	runWithConfig(t, binPath, configDir, "config", "set", "country", "Saudi Arabia")
+	runWithConfig(t, binPath, configDir, "config", "set", "method", "4")
+
+	output, err := runWithConfig(t, binPath, configDir, "config", "--json")
+	if err != nil {
+		t.Fatalf("config --json failed: %v\n%s", err, output)
+	}
+
+	// Verify valid JSON.
+	var cfg struct {
+		Path   string            `json:"path"`
+		Values map[string]string `json:"values"`
+	}
+	if err := json.Unmarshal([]byte(output), &cfg); err != nil {
+		t.Fatalf("config --json output is not valid JSON: %v\nOutput: %s", err, output)
+	}
+
+	// Verify path field.
+	if cfg.Path == "" {
+		t.Error("config --json path should not be empty")
+	}
+
+	// Verify values.
+	if cfg.Values["city"] != "Mecca" {
+		t.Errorf("config --json city = %q, want %q", cfg.Values["city"], "Mecca")
+	}
+	if cfg.Values["country"] != "Saudi Arabia" {
+		t.Errorf("config --json country = %q, want %q", cfg.Values["country"], "Saudi Arabia")
+	}
+	if cfg.Values["method"] != "4" {
+		t.Errorf("config --json method = %q, want %q", cfg.Values["method"], "4")
+	}
+}
+
+// TestConfigJSON_Empty verifies 'config --json' with empty config returns empty values.
+func TestConfigJSON_Empty(t *testing.T) {
+	binPath := buildBinary(t, "")
+	configDir := t.TempDir()
+
+	output, err := runWithConfig(t, binPath, configDir, "config", "--json")
+	if err != nil {
+		t.Fatalf("config --json failed: %v\n%s", err, output)
+	}
+
+	var cfg struct {
+		Path   string            `json:"path"`
+		Values map[string]string `json:"values"`
+	}
+	if err := json.Unmarshal([]byte(output), &cfg); err != nil {
+		t.Fatalf("config --json output is not valid JSON: %v\nOutput: %s", err, output)
+	}
+
+	if len(cfg.Values) != 0 {
+		t.Errorf("config --json with empty config should have no values, got: %v", cfg.Values)
+	}
+}
+
+// TestCompletionBash verifies 'completion bash' generates shell completion.
+func TestCompletionBash(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "completion", "bash").Output()
+	if err != nil {
+		t.Fatalf("completion bash failed: %v", err)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "bash") && !strings.Contains(output, "prayer-times") {
+		t.Error("completion bash output should contain shell completion script")
+	}
+	if len(output) < 100 {
+		t.Errorf("completion bash output seems too short (%d bytes)", len(output))
+	}
+}
+
+// TestCompletionZsh verifies 'completion zsh' generates shell completion.
+func TestCompletionZsh(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "completion", "zsh").Output()
+	if err != nil {
+		t.Fatalf("completion zsh failed: %v", err)
+	}
+
+	if len(out) < 100 {
+		t.Errorf("completion zsh output seems too short (%d bytes)", len(out))
+	}
+}
+
+// TestCompletionFish verifies 'completion fish' generates shell completion.
+func TestCompletionFish(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "completion", "fish").Output()
+	if err != nil {
+		t.Fatalf("completion fish failed: %v", err)
+	}
+
+	if len(out) < 100 {
+		t.Errorf("completion fish output seems too short (%d bytes)", len(out))
+	}
+}
+
+// TestCompletionInvalidShell verifies 'completion invalid' fails.
+func TestCompletionInvalidShell(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	_, err := exec.Command(binPath, "completion", "invalid").CombinedOutput()
+	if err == nil {
+		t.Fatal("completion with invalid shell should fail")
+	}
+}
+
+// TestCompletionNoArgs verifies 'completion' with no args fails.
+func TestCompletionNoArgs(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	_, err := exec.Command(binPath, "completion").CombinedOutput()
+	if err == nil {
+		t.Fatal("completion with no args should fail")
+	}
+}
+
+// TestPrayersGlobalFlag verifies that --prayers is listed as a global flag.
+func TestPrayersGlobalFlag(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "--help").Output()
+	if err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "--prayers") {
+		t.Error("--help should list --prayers as a global flag")
+	}
+}
+
+// TestHelpShowsCompletion verifies that --help shows the completion subcommand.
+func TestHelpShowsCompletion(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "--help").Output()
+	if err != nil {
+		t.Fatalf("--help failed: %v", err)
+	}
+
+	output := string(out)
+	if !strings.Contains(output, "completion") {
+		t.Error("--help output should list 'completion' subcommand")
 	}
 }
