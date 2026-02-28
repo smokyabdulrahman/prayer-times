@@ -50,9 +50,11 @@ release: clean
 	@echo "Release artifacts in $(DIST_DIR)/:"
 	@ls -lh $(DIST_DIR)/
 
-## install: build and install to plugin bin/ for local testing
-install: build
-	@echo "Binaries ready at $(BIN_DIR)/$(BINARY_NAME) and $(BIN_DIR)/$(ALIAS_NAME)"
+## install: install both binaries to $GOPATH/bin (or $HOME/go/bin)
+install:
+	go install -ldflags "$(LDFLAGS)" $(CMD_PATH)
+	go install -ldflags "$(LDFLAGS)" $(ALIAS_PATH)
+	@echo "Installed $(BINARY_NAME) and $(ALIAS_NAME) to $$(go env GOPATH)/bin/"
 
 ## help: show this help
 help:

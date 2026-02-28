@@ -25,7 +25,8 @@ jobs:
 
       - name: Build release binaries
         run: |
-          BINARY_NAME="tmux-prayer-times"
+          BINARY_NAME="prayer-times"
+          ALIAS_NAME="pt"
           VERSION="${GITHUB_REF_NAME}"
           LDFLAGS="-s -w -X main.version=${VERSION}"
 
@@ -44,10 +45,12 @@ jobs:
 
             echo "Building ${output_name}..."
             GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=0 \
-              go build -ldflags "$LDFLAGS" -o "dist/${BINARY_NAME}" ./cmd/tmux-prayer-times/
+              go build -ldflags "$LDFLAGS" -o "dist/${BINARY_NAME}" ./cmd/prayer-times/
+            GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=0 \
+              go build -ldflags "$LDFLAGS" -o "dist/${ALIAS_NAME}" ./cmd/pt/
 
-            tar -czf "dist/${output_name}.tar.gz" -C dist "${BINARY_NAME}"
-            rm "dist/${BINARY_NAME}"
+            tar -czf "dist/${output_name}.tar.gz" -C dist "${BINARY_NAME}" "${ALIAS_NAME}"
+            rm "dist/${BINARY_NAME}" "dist/${ALIAS_NAME}"
           done
 
           ls -la dist/

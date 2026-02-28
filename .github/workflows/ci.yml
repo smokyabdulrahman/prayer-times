@@ -22,8 +22,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build -v ./...
+      - name: Build both binaries
+        run: |
+          go build -v -ldflags "-s -w" -o bin/prayer-times ./cmd/prayer-times/
+          go build -v -ldflags "-s -w" -o bin/pt ./cmd/pt/
 
       - name: Test
         run: go test -v -race ./...
