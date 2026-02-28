@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/smokyabdulrahman/prayer-times/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -68,46 +70,127 @@ func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show or modify configuration",
-		Long:  "Display current configuration, or use subcommands to modify it.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 2.
-			fmt.Println("config command is not yet implemented")
-			return nil
-		},
+		Long:  "Display current configuration, or use subcommands to modify it.\nWhen run without subcommands, shows the current configuration.",
+		RunE:  runConfigShow,
 	}
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a config value",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 2.
-			fmt.Printf("config set is not yet implemented (key=%s, value=%s)\n", args[0], args[1])
-			return nil
-		},
+		Long: fmt.Sprintf("Set a configuration value. Valid keys: %s\n\nExamples:\n  prayer-times config set city Riyadh\n  prayer-times config set country \"Saudi Arabia\"\n  prayer-times config set method 4\n  prayer-times config set time_format 12h\n  prayer-times config set prayers Fajr,Dhuhr,Asr,Maghrib,Isha",
+			strings.Join(config.ValidKeys, ", ")),
+		Args: cobra.ExactArgs(2),
+		RunE: runConfigSet,
 	})
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "reset",
 		Short: "Reset config to defaults",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 2.
-			fmt.Println("config reset is not yet implemented")
-			return nil
-		},
+		Long:  "Delete the config file and restore all settings to defaults.",
+		RunE:  runConfigReset,
 	})
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "path",
 		Short: "Print config file path",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 2.
-			fmt.Println("~/.config/prayer-times/config.json")
-			return nil
-		},
+		RunE:  runConfigPath,
 	})
 
 	return cmd
+}
+
+// runConfigShow displays the current configuration.
+func runConfigShow(cmd *cobra.Command, args []string) error {
+	path, err := config.Path()
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Configuration (%s)\n\n", path)
+
+	for _, key := range config.ValidKeys {
+		val, _ := cfg.Get(key)
+		display := val
+		if display == "" {
+			display = "(not set)"
+		}
+		// Add descriptive labels for method and school.
+		if key == "method" && val != "" {
+			display = formatMethodValue(val)
+		}
+		if key == "school" && val != "" {
+			display = formatSchoolValue(val)
+		}
+		fmt.Printf("  %-14s %s\n", key, display)
+	}
+	return nil
+}
+
+// runConfigSet sets a config key to the given value.
+func runConfigSet(cmd *cobra.Command, args []string) error {
+	key, value := args[0], args[1]
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	if err := cfg.Set(key, value); err != nil {
+		return err
+	}
+
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+
+	fmt.Printf("Set %s = %s\n", key, value)
+	return nil
+}
+
+// runConfigReset deletes the config file.
+func runConfigReset(cmd *cobra.Command, args []string) error {
+	if err := config.Reset(); err != nil {
+		return err
+	}
+	fmt.Println("Configuration reset to defaults.")
+	return nil
+}
+
+// runConfigPath prints the config file path.
+func runConfigPath(cmd *cobra.Command, args []string) error {
+	path, err := config.Path()
+	if err != nil {
+		return err
+	}
+	fmt.Println(path)
+	return nil
+}
+
+// formatMethodValue adds the method name to the numeric value.
+func formatMethodValue(val string) string {
+	for _, m := range CalculationMethods {
+		if fmt.Sprintf("%d", m.ID) == val {
+			return fmt.Sprintf("%s (%s)", val, m.Name)
+		}
+	}
+	return val
+}
+
+// formatSchoolValue adds the school name to the numeric value.
+func formatSchoolValue(val string) string {
+	switch val {
+	case "0":
+		return "0 (Shafi)"
+	case "1":
+		return "1 (Hanafi)"
+	default:
+		return val
+	}
 }
 
 // CalculationMethods lists all supported Al Adhan API calculation methods.

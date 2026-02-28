@@ -14,9 +14,8 @@ import (
 )
 
 var (
-	flagFormat     string
-	flagTimeFormat string
-	flagPrayers    string
+	flagFormat  string
+	flagPrayers string
 )
 
 func newNextCmd() *cobra.Command {
@@ -28,8 +27,7 @@ func newNextCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&flagFormat, "format", prayer.FormatFull, "Display format: time-remaining, next-prayer-time, name-and-time, name-and-remaining, short-name-and-time, short-name-and-remaining, full, or a custom Go template")
-	cmd.Flags().StringVar(&flagTimeFormat, "time-format", "24h", "Time format: 12h or 24h")
-	cmd.Flags().StringVar(&flagPrayers, "prayers", "", "Comma-separated list of prayers to track (default: Fajr,Sunrise,Dhuhr,Asr,Maghrib,Isha)")
+	cmd.Flags().StringVar(&flagPrayers, "prayers", "", "Comma-separated list of prayers to track (overrides config)")
 
 	return cmd
 }
@@ -43,24 +41,50 @@ const (
 	locationAuto
 )
 
+// resolvedLocation holds the result of location resolution.
+type resolvedLocation struct {
+	Mode     locationMode
+	Lat, Lon float64
+	City     string
+	Country  string
+	Timezone string // optional hint from geo-detection
+}
+
+// fetchResult holds the data returned from a prayer times fetch.
+type fetchResult struct {
+	Timings  api.Timings
+	Meta     api.Meta
+	DateInfo api.DateInfo
+}
+
 func runNext(cmd *cobra.Command, args []string) error {
+	// Get merged config (CLI flags > config file > defaults).
+	cfg := effectiveConfig(cmd)
+
 	// Determine which prayers to track.
+	// Priority: --prayers flag > config > defaults.
 	selectedPrayers := prayer.DefaultPrayerNames
-	if flagPrayers != "" {
+	if cmd.Flags().Changed("prayers") && flagPrayers != "" {
 		selectedPrayers = strings.Split(flagPrayers, ",")
+		for i := range selectedPrayers {
+			selectedPrayers[i] = strings.TrimSpace(selectedPrayers[i])
+		}
+	} else if cfg.Prayers != "" {
+		selectedPrayers = strings.Split(cfg.Prayers, ",")
 		for i := range selectedPrayers {
 			selectedPrayers[i] = strings.TrimSpace(selectedPrayers[i])
 		}
 	}
 
-	// Determine time format string.
+	// Determine time format from merged config (already merged via effectiveConfig).
+	timeFmt := cfg.TimeFormat
 	goTimeFmt := "15:04" // 24h
-	if flagTimeFormat == "12h" {
+	if timeFmt == "12h" {
 		goTimeFmt = "3:04 PM"
 	}
 
 	// Initialize cache.
-	c, err := cache.New(FlagCacheDir)
+	c, err := cache.New(cfg.CacheDir)
 	if err != nil {
 		// Cache init failure is non-fatal; we just skip caching.
 		c = nil
@@ -70,33 +94,39 @@ func runNext(cmd *cobra.Command, args []string) error {
 	now := time.Now()
 
 	// Resolve location mode and coordinates.
-	mode, lat, lon, city, country, tz, err := resolveLocation(FlagLatitude, FlagLongitude, FlagCity, FlagCountry, c)
+	// Priority: CLI flags > config > cached geo > IP auto-detect.
+	loc, err := resolveLocation(cfg.Latitude, cfg.Longitude, cfg.City, cfg.Country, c)
 	if err != nil {
 		return err
 	}
 
+	// Get method/school from merged config.
+	method := cfg.MethodOrDefault(-1)
+	school := cfg.SchoolOrDefault(-1)
+
 	// Fetch today's timings (from cache or API).
-	timings, meta, err := fetchTimings(now, mode, lat, lon, city, country, FlagMethod, FlagSchool, c)
+	result, err := fetchTimings(now, loc, method, school, c)
 	if err != nil {
 		return err
 	}
 
 	// Determine timezone.
+	tz := loc.Timezone
 	if tz == "" {
-		tz = meta.Timezone
+		tz = result.Meta.Timezone
 	}
-	loc, err := time.LoadLocation(tz)
+	tzLoc, err := time.LoadLocation(tz)
 	if err != nil {
 		return fmt.Errorf("invalid timezone %q: %w", tz, err)
 	}
 
 	// Re-anchor "now" to the API's timezone so comparisons work correctly
 	// when the user is querying a different timezone than their local one.
-	now = now.In(loc)
+	now = now.In(tzLoc)
 	today := now
 
 	// Parse today's prayer times.
-	prayers, err := prayer.ParseTimings(*timings, today, loc, selectedPrayers)
+	prayers, err := prayer.ParseTimings(result.Timings, today, tzLoc, selectedPrayers)
 	if err != nil {
 		return err
 	}
@@ -108,7 +138,7 @@ func runNext(cmd *cobra.Command, args []string) error {
 	if next == nil {
 		tomorrow := today.AddDate(0, 0, 1)
 
-		tTimings, _, fetchErr := fetchTimings(tomorrow, mode, lat, lon, city, country, FlagMethod, FlagSchool, c)
+		tResult, fetchErr := fetchTimings(tomorrow, loc, method, school, c)
 		if fetchErr != nil {
 			// Network failure for tomorrow's data: show last prayer with
 			// a "done" indicator rather than crashing the status bar.
@@ -120,7 +150,7 @@ func runNext(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to fetch tomorrow's times: %w", fetchErr)
 		}
 
-		tomorrowPrayers, err := prayer.ParseTimings(*tTimings, tomorrow, loc, selectedPrayers)
+		tomorrowPrayers, err := prayer.ParseTimings(tResult.Timings, tomorrow, tzLoc, selectedPrayers)
 		if err != nil {
 			return err
 		}
@@ -141,29 +171,34 @@ func runNext(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveLocation determines the effective location based on user flags or auto-detection.
-// It returns the mode used, the resolved lat/lon/city/country, and an optional timezone hint.
-func resolveLocation(lat, lon float64, city, country string, c *cache.Cache) (locationMode, float64, float64, string, string, string, error) {
+// resolveLocation determines the effective location based on user flags, config, or auto-detection.
+// Priority: CLI flags > config > cached geolocation > IP auto-detect.
+func resolveLocation(lat, lon float64, city, country string, c *cache.Cache) (resolvedLocation, error) {
 	switch {
 	case lat != 0 || lon != 0:
-		return locationCoords, lat, lon, "", "", "", nil
+		return resolvedLocation{Mode: locationCoords, Lat: lat, Lon: lon}, nil
 	case city != "":
 		if country == "" {
-			return 0, 0, 0, "", "", "", fmt.Errorf("--country is required when using --city")
+			return resolvedLocation{}, fmt.Errorf("--country is required when using --city")
 		}
-		return locationCity, 0, 0, city, country, "", nil
+		return resolvedLocation{Mode: locationCity, City: city, Country: country}, nil
 	default:
 		// Try cached geolocation first.
 		if c != nil {
 			if cached := c.LoadGeo(); cached != nil {
-				return locationCoords, cached.Latitude, cached.Longitude, "", "", cached.Timezone, nil
+				return resolvedLocation{
+					Mode:     locationCoords,
+					Lat:      cached.Latitude,
+					Lon:      cached.Longitude,
+					Timezone: cached.Timezone,
+				}, nil
 			}
 		}
 
 		// Fall back to IP-based geolocation.
 		detected, err := geo.DetectLocation()
 		if err != nil {
-			return 0, 0, 0, "", "", "", fmt.Errorf("no location specified and auto-detection failed: %w", err)
+			return resolvedLocation{}, fmt.Errorf("no location specified and auto-detection failed: %w", err)
 		}
 
 		// Cache the detected location.
@@ -171,16 +206,25 @@ func resolveLocation(lat, lon float64, city, country string, c *cache.Cache) (lo
 			_ = c.SaveGeo(detected) // best-effort
 		}
 
-		return locationCoords, detected.Latitude, detected.Longitude, "", "", detected.Timezone, nil
+		return resolvedLocation{
+			Mode:     locationCoords,
+			Lat:      detected.Latitude,
+			Lon:      detected.Longitude,
+			Timezone: detected.Timezone,
+		}, nil
 	}
 }
 
 // fetchTimings returns prayer timings for the given date, using the cache when available.
-func fetchTimings(date time.Time, mode locationMode, lat, lon float64, city, country string, method, school int, c *cache.Cache) (*api.Timings, *api.Meta, error) {
+func fetchTimings(date time.Time, loc resolvedLocation, method, school int, c *cache.Cache) (*fetchResult, error) {
 	// Try cache first.
 	if c != nil {
-		if entry := c.LoadTimings(date, lat, lon, city, country, method, school); entry != nil {
-			return &entry.Timings, &entry.Meta, nil
+		if entry := c.LoadTimings(date, loc.Lat, loc.Lon, loc.City, loc.Country, method, school); entry != nil {
+			return &fetchResult{
+				Timings:  entry.Timings,
+				Meta:     entry.Meta,
+				DateInfo: entry.DateInfo,
+			}, nil
 		}
 	}
 
@@ -191,21 +235,25 @@ func fetchTimings(date time.Time, mode locationMode, lat, lon float64, city, cou
 		err  error
 	)
 
-	switch mode {
+	switch loc.Mode {
 	case locationCity:
-		resp, err = client.FetchByCity(date, city, country, method, school)
+		resp, err = client.FetchByCity(date, loc.City, loc.Country, method, school)
 	default:
-		resp, err = client.FetchByCoordinates(date, lat, lon, method, school)
+		resp, err = client.FetchByCoordinates(date, loc.Lat, loc.Lon, method, school)
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Write to cache (best-effort).
 	if c != nil {
-		_ = c.SaveTimings(date, lat, lon, city, country, method, school, resp)
+		_ = c.SaveTimings(date, loc.Lat, loc.Lon, loc.City, loc.Country, method, school, resp)
 	}
 
-	return &resp.Data.Timings, &resp.Data.Meta, nil
+	return &fetchResult{
+		Timings:  resp.Data.Timings,
+		Meta:     resp.Data.Meta,
+		DateInfo: resp.Data.Date,
+	}, nil
 }

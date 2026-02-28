@@ -220,6 +220,75 @@ func TestNextPrayer_EmptyList(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// CurrentPrayer
+// ---------------------------------------------------------------------------
+
+func TestCurrentPrayer_MiddleOfDay(t *testing.T) {
+	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	prayers, _ := ParseTimings(sampleTimings(), date, time.UTC, DefaultPrayerNames)
+
+	// At 13:00 — Dhuhr (12:13) has passed, it should be the current prayer.
+	now := time.Date(2026, 2, 28, 13, 0, 0, 0, time.UTC)
+	current := CurrentPrayer(prayers, now)
+	if current == nil {
+		t.Fatal("expected a current prayer, got nil")
+	}
+	if current.Name != "Dhuhr" {
+		t.Errorf("expected Dhuhr, got %s", current.Name)
+	}
+}
+
+func TestCurrentPrayer_BeforeFirstPrayer(t *testing.T) {
+	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	prayers, _ := ParseTimings(sampleTimings(), date, time.UTC, DefaultPrayerNames)
+
+	// At 03:00 — before Fajr (05:17), no prayer has passed.
+	now := time.Date(2026, 2, 28, 3, 0, 0, 0, time.UTC)
+	current := CurrentPrayer(prayers, now)
+	if current != nil {
+		t.Errorf("expected nil before first prayer, got %s", current.Name)
+	}
+}
+
+func TestCurrentPrayer_AfterAllPrayers(t *testing.T) {
+	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	prayers, _ := ParseTimings(sampleTimings(), date, time.UTC, DefaultPrayerNames)
+
+	// At 22:00 — after Isha (19:10), Isha is the current prayer.
+	now := time.Date(2026, 2, 28, 22, 0, 0, 0, time.UTC)
+	current := CurrentPrayer(prayers, now)
+	if current == nil {
+		t.Fatal("expected a current prayer, got nil")
+	}
+	if current.Name != "Isha" {
+		t.Errorf("expected Isha, got %s", current.Name)
+	}
+}
+
+func TestCurrentPrayer_ExactTime(t *testing.T) {
+	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
+	prayers, _ := ParseTimings(sampleTimings(), date, time.UTC, DefaultPrayerNames)
+
+	// Exactly at Dhuhr time (12:13) — Dhuhr counts as current (not after now).
+	now := time.Date(2026, 2, 28, 12, 13, 0, 0, time.UTC)
+	current := CurrentPrayer(prayers, now)
+	if current == nil {
+		t.Fatal("expected a current prayer, got nil")
+	}
+	if current.Name != "Dhuhr" {
+		t.Errorf("expected Dhuhr, got %s", current.Name)
+	}
+}
+
+func TestCurrentPrayer_EmptyList(t *testing.T) {
+	now := time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)
+	current := CurrentPrayer([]Prayer{}, now)
+	if current != nil {
+		t.Errorf("expected nil for empty prayer list, got %v", current)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TimeRemaining
 // ---------------------------------------------------------------------------
 

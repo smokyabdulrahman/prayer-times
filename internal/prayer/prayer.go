@@ -87,6 +87,18 @@ func NextPrayer(prayers []Prayer, now time.Time) *Prayer {
 	return nil
 }
 
+// CurrentPrayer returns the most recent prayer that has already passed (or is exactly now).
+// Returns nil if no prayer has passed yet (i.e., before the first prayer of the day).
+func CurrentPrayer(prayers []Prayer, now time.Time) *Prayer {
+	var current *Prayer
+	for i := range prayers {
+		if !prayers[i].Time.After(now) {
+			current = &prayers[i]
+		}
+	}
+	return current
+}
+
 // TimeRemaining returns the duration until the given prayer time.
 func TimeRemaining(prayer Prayer, now time.Time) time.Duration {
 	return prayer.Time.Sub(now)

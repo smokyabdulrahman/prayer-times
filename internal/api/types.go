@@ -32,8 +32,64 @@ type Timings struct {
 
 // DateInfo contains date representations.
 type DateInfo struct {
-	Readable  string `json:"readable"`
-	Timestamp string `json:"timestamp"`
+	Readable  string        `json:"readable"`
+	Timestamp string        `json:"timestamp"`
+	Hijri     HijriDate     `json:"hijri"`
+	Gregorian GregorianDate `json:"gregorian"`
+}
+
+// HijriDate represents the Hijri (Islamic) date from the API response.
+type HijriDate struct {
+	Date        string           `json:"date"` // e.g. "10-08-1447"
+	Day         string           `json:"day"`
+	Month       HijriMonth       `json:"month"`
+	Year        string           `json:"year"`
+	Designation HijriDesignation `json:"designation"`
+}
+
+// HijriMonth represents the month in the Hijri calendar.
+type HijriMonth struct {
+	Number int    `json:"number"`
+	En     string `json:"en"` // English name, e.g. "Shaʿbān"
+	Ar     string `json:"ar"` // Arabic name
+}
+
+// HijriDesignation contains the calendar designation labels.
+type HijriDesignation struct {
+	Abbreviated string `json:"abbreviated"` // "AH"
+	Expanded    string `json:"expanded"`    // "Anno Hegirae"
+}
+
+// Format returns the Hijri date as "DD MonthName YYYY AH".
+func (h HijriDate) Format() string {
+	if h.Day == "" || h.Month.En == "" || h.Year == "" {
+		return ""
+	}
+	abbr := h.Designation.Abbreviated
+	if abbr == "" {
+		abbr = "AH"
+	}
+	return h.Day + " " + h.Month.En + " " + h.Year + " " + abbr
+}
+
+// GregorianDate represents the Gregorian date from the API response.
+type GregorianDate struct {
+	Date    string         `json:"date"` // e.g. "28-02-2026"
+	Day     string         `json:"day"`
+	Weekday GregorianDay   `json:"weekday"`
+	Month   GregorianMonth `json:"month"`
+	Year    string         `json:"year"`
+}
+
+// GregorianDay contains the weekday name.
+type GregorianDay struct {
+	En string `json:"en"` // e.g. "Saturday"
+}
+
+// GregorianMonth contains the month details.
+type GregorianMonth struct {
+	Number int    `json:"number"`
+	En     string `json:"en"` // e.g. "February"
 }
 
 // Meta contains request metadata returned by the API.

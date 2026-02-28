@@ -25,11 +25,12 @@ type Cache struct {
 
 // PrayerCacheEntry stores a day's prayer times along with metadata for validation.
 type PrayerCacheEntry struct {
-	Date    string      `json:"date"` // YYYY-MM-DD
-	Method  int         `json:"method"`
-	School  int         `json:"school"`
-	Timings api.Timings `json:"timings"`
-	Meta    api.Meta    `json:"meta"`
+	Date     string       `json:"date"` // YYYY-MM-DD
+	Method   int          `json:"method"`
+	School   int          `json:"school"`
+	Timings  api.Timings  `json:"timings"`
+	Meta     api.Meta     `json:"meta"`
+	DateInfo api.DateInfo `json:"date_info"`
 }
 
 // GeoCacheEntry stores a cached geolocation result with a timestamp.
@@ -96,11 +97,12 @@ func (c *Cache) SaveTimings(date time.Time, lat, lon float64, city, country stri
 	path := filepath.Join(c.dir, fmt.Sprintf(prayerCacheFile, key))
 
 	entry := PrayerCacheEntry{
-		Date:    dateStr,
-		Method:  method,
-		School:  school,
-		Timings: resp.Data.Timings,
-		Meta:    resp.Data.Meta,
+		Date:     dateStr,
+		Method:   method,
+		School:   school,
+		Timings:  resp.Data.Timings,
+		Meta:     resp.Data.Meta,
+		DateInfo: resp.Data.Date,
 	}
 
 	data, err := json.Marshal(entry)
