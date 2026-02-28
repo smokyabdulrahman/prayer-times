@@ -2,6 +2,7 @@ package cache
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -275,6 +276,197 @@ func TestGeo_CorruptedFile(t *testing.T) {
 	got := c.LoadGeo()
 	if got != nil {
 		t.Error("expected nil for corrupted geo cache, got entry")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SaveCalendar / LoadCalendar round-trip
+// ---------------------------------------------------------------------------
+
+func sampleCalendarResponse(days int) *api.CalendarResponse {
+	data := make([]api.Data, days)
+	for i := 0; i < days; i++ {
+		data[i] = api.Data{
+			Timings: api.Timings{
+				Fajr:    "05:17",
+				Sunrise: "06:48",
+				Dhuhr:   "12:13",
+				Asr:     "15:02",
+				Maghrib: "17:39",
+				Isha:    "19:10",
+			},
+			Date: api.DateInfo{
+				Readable: fmt.Sprintf("%d Feb 2026", i+1),
+			},
+			Meta: api.Meta{
+				Latitude:  51.5074,
+				Longitude: -0.1278,
+				Timezone:  "Europe/London",
+				Method:    api.MethodInfo{ID: 2, Name: "ISNA"},
+				School:    "STANDARD",
+			},
+		}
+	}
+	return &api.CalendarResponse{
+		Code:   200,
+		Status: "OK",
+		Data:   data,
+	}
+}
+
+func TestCalendar_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+
+	err := c.SaveCalendar(2026, 2, 51.5074, -0.1278, "", "", 2, 0, resp)
+	if err != nil {
+		t.Fatalf("SaveCalendar error: %v", err)
+	}
+
+	entry := c.LoadCalendar(2026, 2, 51.5074, -0.1278, "", "", 2, 0)
+	if entry == nil {
+		t.Fatal("LoadCalendar returned nil after save")
+	}
+
+	if entry.Year != 2026 {
+		t.Errorf("Year = %d, want %d", entry.Year, 2026)
+	}
+	if entry.Month != 2 {
+		t.Errorf("Month = %d, want %d", entry.Month, 2)
+	}
+	if len(entry.Days) != 28 {
+		t.Errorf("Days count = %d, want 28", len(entry.Days))
+	}
+	if entry.Days[0].Timings.Fajr != "05:17" {
+		t.Errorf("Day[0].Fajr = %q, want %q", entry.Days[0].Timings.Fajr, "05:17")
+	}
+	if entry.Days[0].Meta.Timezone != "Europe/London" {
+		t.Errorf("Timezone = %q, want %q", entry.Days[0].Meta.Timezone, "Europe/London")
+	}
+}
+
+func TestCalendar_CacheMiss(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	entry := c.LoadCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0)
+	if entry != nil {
+		t.Error("expected nil for calendar cache miss, got entry")
+	}
+}
+
+func TestCalendar_DifferentMonth(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+	_ = c.SaveCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0, resp)
+
+	// Load for a different month -- should miss.
+	entry := c.LoadCalendar(2026, 3, 51.5, -0.1, "", "", 2, 0)
+	if entry != nil {
+		t.Error("expected nil for different month, got entry")
+	}
+}
+
+func TestCalendar_DifferentYear(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+	_ = c.SaveCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0, resp)
+
+	// Load for a different year -- should miss.
+	entry := c.LoadCalendar(2027, 2, 51.5, -0.1, "", "", 2, 0)
+	if entry != nil {
+		t.Error("expected nil for different year, got entry")
+	}
+}
+
+func TestCalendar_DifferentParams(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+	_ = c.SaveCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0, resp)
+
+	// Load with different method -- should miss.
+	entry := c.LoadCalendar(2026, 2, 51.5, -0.1, "", "", 3, 0)
+	if entry != nil {
+		t.Error("expected nil for different method, got entry")
+	}
+}
+
+func TestCalendar_CityKey(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+	_ = c.SaveCalendar(2026, 2, 0, 0, "London", "UK", -1, -1, resp)
+
+	entry := c.LoadCalendar(2026, 2, 0, 0, "London", "UK", -1, -1)
+	if entry == nil {
+		t.Fatal("expected entry for city-keyed calendar cache, got nil")
+	}
+
+	// Different city should miss.
+	entry = c.LoadCalendar(2026, 2, 0, 0, "Paris", "FR", -1, -1)
+	if entry != nil {
+		t.Error("expected nil for different city, got entry")
+	}
+}
+
+func TestCalendar_CorruptedFile(t *testing.T) {
+	dir := t.TempDir()
+	c, _ := New(dir)
+
+	resp := sampleCalendarResponse(28)
+	_ = c.SaveCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0, resp)
+
+	// Find and corrupt the calendar cache file.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".json" && e.Name() != "geolocation.json" &&
+			len(e.Name()) > 9 && e.Name()[:9] == "calendar_" {
+			path := filepath.Join(dir, e.Name())
+			os.WriteFile(path, []byte("not-json"), 0o644)
+		}
+	}
+
+	entry := c.LoadCalendar(2026, 2, 51.5, -0.1, "", "", 2, 0)
+	if entry != nil {
+		t.Error("expected nil for corrupted calendar cache file, got entry")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// calendarKey
+// ---------------------------------------------------------------------------
+
+func TestCalendarKey_Deterministic(t *testing.T) {
+	k1 := calendarKey(2026, 2, 51.5, -0.1, "", "", 2, 0)
+	k2 := calendarKey(2026, 2, 51.5, -0.1, "", "", 2, 0)
+	if k1 != k2 {
+		t.Errorf("calendarKey not deterministic: %q != %q", k1, k2)
+	}
+}
+
+func TestCalendarKey_DifferentInputs(t *testing.T) {
+	k1 := calendarKey(2026, 2, 51.5, -0.1, "", "", 2, 0)
+	k2 := calendarKey(2026, 2, 51.5, -0.1, "", "", 3, 0)  // different method
+	k3 := calendarKey(2026, 3, 51.5, -0.1, "", "", 2, 0)  // different month
+	k4 := calendarKey(2027, 2, 51.5, -0.1, "", "", 2, 0)  // different year
+	k5 := calendarKey(2026, 2, 40.7, -74.0, "", "", 2, 0) // different coords
+
+	keys := []string{k1, k2, k3, k4, k5}
+	seen := make(map[string]bool)
+	for _, k := range keys {
+		if seen[k] {
+			t.Errorf("duplicate calendar key: %q", k)
+		}
+		seen[k] = true
 	}
 }
 

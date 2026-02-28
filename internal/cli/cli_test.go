@@ -178,24 +178,48 @@ func TestHelpFlag(t *testing.T) {
 	}
 }
 
-// TestStubbedSubcommands verifies stubbed commands run without error.
-func TestStubbedSubcommands(t *testing.T) {
+// TestListWeekMonthQuery_Help verifies that list, week, month, and query subcommands
+// handle --help correctly (they are no longer stubs and require location + API).
+func TestListWeekMonthQuery_Help(t *testing.T) {
 	binPath := buildBinary(t, "")
 
-	stubs := [][]string{
-		{"list"},
-		{"week"},
-		{"month"},
-		{"query", "fajr"},
+	cmds := [][]string{
+		{"list", "--help"},
+		{"week", "--help"},
+		{"month", "--help"},
+		{"query", "--help"},
 	}
 
-	for _, args := range stubs {
+	for _, args := range cmds {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			out, err := exec.Command(binPath, args...).CombinedOutput()
 			if err != nil {
 				t.Errorf("command %v failed: %v\n%s", args, err, out)
 			}
 		})
+	}
+}
+
+// TestQuery_NoArgs verifies that 'query' with no argument fails.
+func TestQuery_NoArgs(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	_, err := exec.Command(binPath, "query").CombinedOutput()
+	if err == nil {
+		t.Fatal("query with no args should fail (requires exactly 1 arg)")
+	}
+}
+
+// TestQuery_InvalidPrayer verifies that 'query' with an invalid prayer name fails.
+func TestQuery_InvalidPrayer(t *testing.T) {
+	binPath := buildBinary(t, "")
+
+	out, err := exec.Command(binPath, "query", "NotAPrayer").CombinedOutput()
+	if err == nil {
+		t.Fatal("query with invalid prayer name should fail")
+	}
+	if !strings.Contains(string(out), "unknown prayer") {
+		t.Errorf("expected 'unknown prayer' in output, got: %s", out)
 	}
 }
 

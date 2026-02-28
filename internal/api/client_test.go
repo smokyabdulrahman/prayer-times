@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -219,6 +220,215 @@ func TestFetchByCoordinates_ConnectionRefused(t *testing.T) {
 
 	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
 	_, err := c.FetchByCoordinates(date, 51.5, -0.1, -1, -1)
+	if err == nil {
+		t.Fatal("expected error for connection refused, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Calendar endpoint tests
+// ---------------------------------------------------------------------------
+
+// sampleCalendarResponse returns a valid Al Adhan calendar API response for testing.
+func sampleCalendarResponse(days int) CalendarResponse {
+	data := make([]Data, days)
+	for i := 0; i < days; i++ {
+		data[i] = Data{
+			Timings: Timings{
+				Fajr:       "05:17",
+				Sunrise:    "06:48",
+				Dhuhr:      "12:13",
+				Asr:        "15:02",
+				Sunset:     "17:39",
+				Maghrib:    "17:39",
+				Isha:       "19:10",
+				Imsak:      "05:07",
+				Midnight:   "00:14",
+				Firstthird: "22:02",
+				Lastthird:  "02:25",
+			},
+			Date: DateInfo{
+				Readable:  "28 Feb 2026",
+				Timestamp: "1772262000",
+				Gregorian: GregorianDate{
+					Date: fmt.Sprintf("%02d-02-2026", i+1),
+					Day:  fmt.Sprintf("%d", i+1),
+				},
+			},
+			Meta: Meta{
+				Latitude:  51.5074,
+				Longitude: -0.1278,
+				Timezone:  "Europe/London",
+				Method:    MethodInfo{ID: 2, Name: "ISNA"},
+				School:    "STANDARD",
+			},
+		}
+	}
+	return CalendarResponse{
+		Code:   200,
+		Status: "OK",
+		Data:   data,
+	}
+}
+
+func TestFetchCalendarByCoordinates_Success(t *testing.T) {
+	resp := sampleCalendarResponse(28)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify the request path contains /calendar/YYYY/MM.
+		if !strings.Contains(r.URL.Path, "/calendar/2026/2") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		// Verify query params.
+		q := r.URL.Query()
+		if q.Get("latitude") == "" {
+			t.Error("missing latitude param")
+		}
+		if q.Get("longitude") == "" {
+			t.Error("missing longitude param")
+		}
+		if q.Get("method") != "2" {
+			t.Errorf("method = %q, want %q", q.Get("method"), "2")
+		}
+		if q.Get("school") != "1" {
+			t.Errorf("school = %q, want %q", q.Get("school"), "1")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	got, err := c.FetchCalendarByCoordinates(2026, 2, 51.5074, -0.1278, 2, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.Data) != 28 {
+		t.Errorf("got %d days, want 28", len(got.Data))
+	}
+	if got.Data[0].Timings.Fajr != "05:17" {
+		t.Errorf("Fajr = %q, want %q", got.Data[0].Timings.Fajr, "05:17")
+	}
+}
+
+func TestFetchCalendarByCoordinates_NoMethodOrSchool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("method") != "" {
+			t.Errorf("method should not be set, got %q", q.Get("method"))
+		}
+		if q.Get("school") != "" {
+			t.Errorf("school should not be set, got %q", q.Get("school"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sampleCalendarResponse(28))
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	_, err := c.FetchCalendarByCoordinates(2026, 2, 51.5074, -0.1278, -1, -1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchCalendarByCity_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/calendarByCity/2026/3") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("city") != "London" {
+			t.Errorf("city = %q, want %q", q.Get("city"), "London")
+		}
+		if q.Get("country") != "UK" {
+			t.Errorf("country = %q, want %q", q.Get("country"), "UK")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sampleCalendarResponse(31))
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	got, err := c.FetchCalendarByCity(2026, 3, "London", "UK", -1, -1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.Data) != 31 {
+		t.Errorf("got %d days, want 31", len(got.Data))
+	}
+}
+
+func TestFetchCalendarByCoordinates_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	_, err := c.FetchCalendarByCoordinates(2026, 2, 51.5, -0.1, -1, -1)
+	if err == nil {
+		t.Fatal("expected error for HTTP 503, got nil")
+	}
+	if !strings.Contains(err.Error(), "503") {
+		t.Errorf("error should mention 503, got: %v", err)
+	}
+}
+
+func TestFetchCalendarByCoordinates_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	_, err := c.FetchCalendarByCoordinates(2026, 2, 51.5, -0.1, -1, -1)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "decode") {
+		t.Errorf("error should mention decode, got: %v", err)
+	}
+}
+
+func TestFetchCalendarByCoordinates_APIErrorCode(t *testing.T) {
+	resp := CalendarResponse{Code: 400, Status: "Bad Request"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c := NewClient()
+	c.BaseURL = server.URL
+
+	_, err := c.FetchCalendarByCoordinates(2026, 2, 51.5, -0.1, -1, -1)
+	if err == nil {
+		t.Fatal("expected error for API code 400, got nil")
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Errorf("error should mention 400, got: %v", err)
+	}
+}
+
+func TestFetchCalendarByCoordinates_ConnectionRefused(t *testing.T) {
+	c := NewClient()
+	c.BaseURL = "http://127.0.0.1:1" // nothing listening
+
+	_, err := c.FetchCalendarByCoordinates(2026, 2, 51.5, -0.1, -1, -1)
 	if err == nil {
 		t.Fatal("expected error for connection refused, got nil")
 	}

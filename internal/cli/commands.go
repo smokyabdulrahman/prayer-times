@@ -15,9 +15,7 @@ func newListCmd() *cobra.Command {
 		Long:  "Display a grid of prayer times for N days (default: 7).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 4.
-			fmt.Println("list command is not yet implemented")
-			return nil
+			return runList(cmd, args, 7)
 		},
 	}
 }
@@ -28,9 +26,7 @@ func newWeekCmd() *cobra.Command {
 		Short: "Show prayer times for the next 7 days",
 		Long:  "Alias for 'list 7'. Display a grid of prayer times for 7 days.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 4 (delegate to list 7).
-			fmt.Println("week command is not yet implemented")
-			return nil
+			return runList(cmd, nil, 7)
 		},
 	}
 }
@@ -41,29 +37,9 @@ func newMonthCmd() *cobra.Command {
 		Short: "Show prayer times for the next 30 days",
 		Long:  "Alias for 'list 30'. Display a grid of prayer times for 30 days.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 4 (delegate to list 30).
-			fmt.Println("month command is not yet implemented")
-			return nil
+			return runList(cmd, nil, 30)
 		},
 	}
-}
-
-func newQueryCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "query <prayer>",
-		Short: "Query a specific prayer time",
-		Long:  "Query a specific prayer time for today, or across multiple days with --days.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement in Phase 4.
-			fmt.Printf("query command is not yet implemented (prayer: %s)\n", args[0])
-			return nil
-		},
-	}
-
-	cmd.Flags().String("days", "", "Number of days to show (or 'week'/'month')")
-
-	return cmd
 }
 
 func newConfigCmd() *cobra.Command {

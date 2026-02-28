@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	prayerCacheFile = "timings_%s.json" // keyed by hash
-	geoCacheFile    = "geolocation.json"
-	geoTTL          = 24 * time.Hour
+	prayerCacheFile   = "timings_%s.json"  // keyed by hash
+	calendarCacheFile = "calendar_%s.json" // keyed by hash
+	geoCacheFile      = "geolocation.json"
+	geoTTL            = 24 * time.Hour
 )
 
 // Cache provides file-based caching for prayer times and geolocation data.
@@ -37,6 +38,15 @@ type PrayerCacheEntry struct {
 type GeoCacheEntry struct {
 	Location geo.Location `json:"location"`
 	CachedAt time.Time    `json:"cached_at"`
+}
+
+// CalendarCacheEntry stores a full month of prayer times.
+type CalendarCacheEntry struct {
+	Year   int        `json:"year"`
+	Month  int        `json:"month"`
+	Method int        `json:"method"`
+	School int        `json:"school"`
+	Days   []api.Data `json:"days"`
 }
 
 // New creates a Cache rooted at the given directory.
@@ -112,6 +122,62 @@ func (c *Cache) SaveTimings(date time.Time, lat, lon float64, city, country stri
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
+	}
+
+	return nil
+}
+
+// calendarKey builds a deterministic hash for a month of calendar data.
+func calendarKey(year, month int, lat, lon float64, city, country string, method, school int) string {
+	raw := fmt.Sprintf("cal|%d|%d|%.6f|%.6f|%s|%s|%d|%d", year, month, lat, lon, city, country, method, school)
+	h := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("%x", h[:8])
+}
+
+// LoadCalendar attempts to read a cached monthly calendar for the given parameters.
+// Returns nil if the cache is missing or for a different month.
+func (c *Cache) LoadCalendar(year, month int, lat, lon float64, city, country string, method, school int) *CalendarCacheEntry {
+	key := calendarKey(year, month, lat, lon, city, country, method, school)
+	path := filepath.Join(c.dir, fmt.Sprintf(calendarCacheFile, key))
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var entry CalendarCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil
+	}
+
+	// Validate year/month match.
+	if entry.Year != year || entry.Month != month {
+		return nil
+	}
+
+	return &entry
+}
+
+// SaveCalendar writes a full month of calendar data to the cache.
+func (c *Cache) SaveCalendar(year, month int, lat, lon float64, city, country string, method, school int, resp *api.CalendarResponse) error {
+	key := calendarKey(year, month, lat, lon, city, country, method, school)
+	path := filepath.Join(c.dir, fmt.Sprintf(calendarCacheFile, key))
+
+	entry := CalendarCacheEntry{
+		Year:   year,
+		Month:  month,
+		Method: method,
+		School: school,
+		Days:   resp.Data,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal calendar cache entry: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write calendar cache file: %w", err)
 	}
 
 	return nil

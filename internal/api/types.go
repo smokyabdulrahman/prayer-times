@@ -106,3 +106,11 @@ type MethodInfo struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
+
+// CalendarResponse represents the Al Adhan calendar API response.
+// The calendar endpoint returns an array of daily data objects for a whole month.
+type CalendarResponse struct {
+	Code   int    `json:"code"`
+	Status string `json:"status"`
+	Data   []Data `json:"data"`
+}

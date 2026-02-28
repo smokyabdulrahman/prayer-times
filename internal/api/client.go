@@ -65,6 +65,41 @@ func (c *Client) FetchByCity(date time.Time, city, country string, method, schoo
 	return c.doRequest(endpoint, params)
 }
 
+// FetchCalendarByCoordinates fetches a full month of prayer times for the given coordinates.
+// year and month specify which calendar month to fetch.
+func (c *Client) FetchCalendarByCoordinates(year int, month int, lat, lon float64, method, school int) (*CalendarResponse, error) {
+	endpoint := fmt.Sprintf("%s/calendar/%d/%d", c.BaseURL, year, month)
+
+	params := url.Values{}
+	params.Set("latitude", fmt.Sprintf("%f", lat))
+	params.Set("longitude", fmt.Sprintf("%f", lon))
+	if method >= 0 {
+		params.Set("method", fmt.Sprintf("%d", method))
+	}
+	if school >= 0 {
+		params.Set("school", fmt.Sprintf("%d", school))
+	}
+
+	return c.doCalendarRequest(endpoint, params)
+}
+
+// FetchCalendarByCity fetches a full month of prayer times for the given city/country.
+func (c *Client) FetchCalendarByCity(year int, month int, city, country string, method, school int) (*CalendarResponse, error) {
+	endpoint := fmt.Sprintf("%s/calendarByCity/%d/%d", c.BaseURL, year, month)
+
+	params := url.Values{}
+	params.Set("city", city)
+	params.Set("country", country)
+	if method >= 0 {
+		params.Set("method", fmt.Sprintf("%d", method))
+	}
+	if school >= 0 {
+		params.Set("school", fmt.Sprintf("%d", school))
+	}
+
+	return c.doCalendarRequest(endpoint, params)
+}
+
 func (c *Client) doRequest(endpoint string, params url.Values) (*Response, error) {
 	reqURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
 
@@ -80,6 +115,32 @@ func (c *Client) doRequest(endpoint string, params url.Values) (*Response, error
 	}
 
 	var apiResp Response
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to decode API response: %w", err)
+	}
+
+	if apiResp.Code != 200 {
+		return nil, fmt.Errorf("API error: code=%d status=%s", apiResp.Code, apiResp.Status)
+	}
+
+	return &apiResp, nil
+}
+
+func (c *Client) doCalendarRequest(endpoint string, params url.Values) (*CalendarResponse, error) {
+	reqURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+
+	resp, err := c.httpClient.Get(reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp CalendarResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return nil, fmt.Errorf("failed to decode API response: %w", err)
 	}

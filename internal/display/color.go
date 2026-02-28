@@ -112,6 +112,6 @@ func Accent(text string) string {
 }
 
 // Boldf formats and bolds a string.
-func Boldf(format string, a ...interface{}) string {
+func Boldf(format string, a ...any) string {
 	return Bold(fmt.Sprintf(format, a...))
 }
