@@ -13,16 +13,26 @@ source "$CURRENT_DIR/helpers.sh"
 # ---------------------------------------------------------------------------
 # Resolve the Go binary
 # ---------------------------------------------------------------------------
-BINARY="$PLUGIN_DIR/bin/tmux-prayer-times"
+# Prefer the binary in the plugin's bin/ directory, then fall back to PATH.
+BINARY=""
 
-if [ ! -x "$BINARY" ]; then
+if [ -x "$PLUGIN_DIR/bin/prayer-times" ]; then
+    BINARY="$PLUGIN_DIR/bin/prayer-times"
+elif command -v prayer-times >/dev/null 2>&1; then
+    BINARY="prayer-times"
+fi
+
+if [ -z "$BINARY" ]; then
     # Attempt auto-install on first run.
     if [ -x "$CURRENT_DIR/install.sh" ]; then
         "$CURRENT_DIR/install.sh" >/dev/null 2>&1
     fi
+    if [ -x "$PLUGIN_DIR/bin/prayer-times" ]; then
+        BINARY="$PLUGIN_DIR/bin/prayer-times"
+    fi
 fi
 
-if [ ! -x "$BINARY" ]; then
+if [ -z "$BINARY" ]; then
     echo "pray-err:no-binary"
     exit 0  # exit 0 so tmux doesn't show an error
 fi
@@ -30,7 +40,8 @@ fi
 # ---------------------------------------------------------------------------
 # Read tmux options and build CLI flags
 # ---------------------------------------------------------------------------
-build_flags() {
+# Global flags (apply to all commands, placed before the subcommand).
+build_global_flags() {
     local flags=()
 
     local city
@@ -69,22 +80,10 @@ build_flags() {
         flags+=("--school" "$school")
     fi
 
-    local format
-    format="$(get_tmux_option "@prayer-times-format" "")"
-    if [ -n "$format" ]; then
-        flags+=("--format" "$format")
-    fi
-
     local time_format
     time_format="$(get_tmux_option "@prayer-times-time-format" "")"
     if [ -n "$time_format" ]; then
         flags+=("--time-format" "$time_format")
-    fi
-
-    local prayers
-    prayers="$(get_tmux_option "@prayer-times-prayers" "")"
-    if [ -n "$prayers" ]; then
-        flags+=("--prayers" "$prayers")
     fi
 
     local cache_dir
@@ -96,11 +95,30 @@ build_flags() {
     echo "${flags[@]}"
 }
 
+# Subcommand-specific flags for `next`.
+build_next_flags() {
+    local flags=()
+
+    local format
+    format="$(get_tmux_option "@prayer-times-format" "")"
+    if [ -n "$format" ]; then
+        flags+=("--format" "$format")
+    fi
+
+    local prayers
+    prayers="$(get_tmux_option "@prayer-times-prayers" "")"
+    if [ -n "$prayers" ]; then
+        flags+=("--prayers" "$prayers")
+    fi
+
+    echo "${flags[@]}"
+}
+
 # ---------------------------------------------------------------------------
-# Run the binary
+# Run the binary: prayer-times [global-flags] next [next-flags]
 # ---------------------------------------------------------------------------
 # shellcheck disable=SC2046
-output=$("$BINARY" $(build_flags) 2>/dev/null) || output=""
+output=$("$BINARY" $(build_global_flags) next $(build_next_flags) 2>/dev/null) || output=""
 
 # Prepend icon if configured.
 icon="$(get_tmux_option "@prayer-times-icon" "")"

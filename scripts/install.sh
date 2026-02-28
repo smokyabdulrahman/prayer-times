@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh -- Download the correct pre-built tmux-prayer-times binary.
+# install.sh -- Download the correct pre-built prayer-times binary.
 #
 # Usage:
 #   ./scripts/install.sh              # auto-detect OS/arch
@@ -11,8 +11,9 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$(dirname "$CURRENT_DIR")"
 BIN_DIR="$PLUGIN_DIR/bin"
 
-GITHUB_REPO="${GITHUB_REPO:-smokyabdulrahman/tmux-prayer-times}"
-BINARY_NAME="tmux-prayer-times"
+GITHUB_REPO="${GITHUB_REPO:-smokyabdulrahman/prayer-times}"
+BINARY_NAME="prayer-times"
+ALIAS_NAME="pt"
 
 # ---------------------------------------------------------------------------
 # Detect platform
@@ -114,12 +115,14 @@ main() {
     tmpfile="$(mktemp)"
     download "$download_url" "$tmpfile"
 
-    tar -xzf "$tmpfile" -C "$BIN_DIR" "$BINARY_NAME" 2>/dev/null \
+    # Extract both prayer-times and pt binaries from the archive.
+    tar -xzf "$tmpfile" -C "$BIN_DIR" "$BINARY_NAME" "$ALIAS_NAME" 2>/dev/null \
         || tar -xzf "$tmpfile" -C "$BIN_DIR" 2>/dev/null
 
     rm -f "$tmpfile"
 
     chmod +x "$BIN_DIR/$BINARY_NAME"
+    [ -f "$BIN_DIR/$ALIAS_NAME" ] && chmod +x "$BIN_DIR/$ALIAS_NAME"
     echo "Installed ${BINARY_NAME} ${version} to ${BIN_DIR}/"
 }
 
@@ -136,9 +139,10 @@ build_from_source() {
 
     echo "Building from source..."
     mkdir -p "$BIN_DIR"
-    (cd "$PLUGIN_DIR" && go build -o "$BIN_DIR/$BINARY_NAME" ./cmd/tmux-prayer-times/)
-    chmod +x "$BIN_DIR/$BINARY_NAME"
-    echo "Built ${BINARY_NAME} to ${BIN_DIR}/"
+    (cd "$PLUGIN_DIR" && go build -o "$BIN_DIR/$BINARY_NAME" ./cmd/prayer-times/)
+    (cd "$PLUGIN_DIR" && go build -o "$BIN_DIR/$ALIAS_NAME" ./cmd/pt/)
+    chmod +x "$BIN_DIR/$BINARY_NAME" "$BIN_DIR/$ALIAS_NAME"
+    echo "Built ${BINARY_NAME} and ${ALIAS_NAME} to ${BIN_DIR}/"
 }
 
 main "$@"
