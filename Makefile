@@ -10,7 +10,7 @@ LDFLAGS      := -s -w -X main.version=$(VERSION)
 
 PLATFORMS    := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
-.PHONY: build test vet clean release install help
+.PHONY: build test vet clean release install menubar menubar-release help
 
 ## build: compile both binaries for the current platform
 build:
@@ -29,7 +29,15 @@ vet:
 
 ## clean: remove build artifacts
 clean:
-	rm -rf $(BIN_DIR) $(DIST_DIR)
+	rm -rf $(BIN_DIR) $(DIST_DIR) PrayerTimesMenuBar/.build
+
+## menubar: build the macOS menubar app (debug)
+menubar:
+	PrayerTimesMenuBar/scripts/build.sh
+
+## menubar-release: build the macOS menubar app (release)
+menubar-release:
+	PrayerTimesMenuBar/scripts/build.sh --release
 
 ## release: cross-compile for all platforms and create tarballs
 release: clean

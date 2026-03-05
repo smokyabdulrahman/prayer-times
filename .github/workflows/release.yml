@@ -9,7 +9,20 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test -v -race ./...
+
+  build-cli:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +32,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Run tests
-        run: go test -v -race ./...
 
       - name: Build release binaries
         run: |
@@ -53,6 +63,67 @@ jobs:
             rm "dist/${BINARY_NAME}" "dist/${ALIAS_NAME}"
           done
 
+          ls -la dist/
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-binaries
+          path: dist/*.tar.gz
+
+  build-menubar:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build menubar app (${{ matrix.arch }})
+        run: |
+          PrayerTimesMenuBar/scripts/build.sh \
+            --release \
+            --arch ${{ matrix.arch }} \
+            --output dist/PrayerTimesMenuBar.app
+
+      - name: Create tarball
+        run: |
+          cd dist
+          tar -czf "PrayerTimesMenuBar_darwin_${{ matrix.arch }}.tar.gz" PrayerTimesMenuBar.app
+
+      - name: Upload menubar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: menubar-${{ matrix.arch }}
+          path: dist/PrayerTimesMenuBar_darwin_${{ matrix.arch }}.tar.gz
+
+  release:
+    needs: [build-cli, build-menubar]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir -p dist
+          cp artifacts/cli-binaries/*.tar.gz dist/
+          cp artifacts/menubar-*/*.tar.gz dist/
           ls -la dist/
 
       - name: Generate checksums

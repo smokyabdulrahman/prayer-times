@@ -37,3 +37,5 @@ dist/
 
 # AI
 .opencode/local/
+.agents
+skills-lock.json
