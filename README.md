@@ -2,7 +2,11 @@
 
 A full-featured CLI for Islamic prayer times, powered by the [Al Adhan API](https://aladhan.com/prayer-times-api).
 
-Also works as a [tmux](https://github.com/tmux/tmux) status bar plugin via [TPM](https://github.com/tmux-plugins/tpm).
+Also works as a [tmux](https://github.com/tmux/tmux) status bar plugin via [TPM](https://github.com/tmux-plugins/tpm), and as a native **macOS menu bar app**.
+
+<p align="center">
+  <img src="screenshots/terminal-screenshot.png" alt="prayer-times CLI output" width="600">
+</p>
 
 ## Features
 
@@ -250,7 +254,27 @@ These flags work with any subcommand and override config file values:
 
 If omitted, the API picks a default based on your location.
 
+## macOS Menu Bar App
+
+A native macOS menu bar app that shows prayer times at a glance. It displays the next prayer countdown in the menu bar and shows the full daily schedule in a dropdown.
+
+<p align="center">
+  <img src="screenshots/mac-os-menubar-app.png" alt="macOS menu bar app" width="400">
+</p>
+
+Features:
+- Next prayer countdown in the menu bar
+- Full daily schedule with Hijri date
+- Configurable display format
+- Open at Login option
+
+See the [PrayerTimesMenuBar](PrayerTimesMenuBar/) directory for build instructions.
+
 ## Tmux Integration
+
+<p align="center">
+  <img src="screenshots/tmux-statusline-integration.png" alt="tmux statusline integration">
+</p>
 
 The tmux plugin displays the next prayer time in your status bar using the `#{prayer_times}` interpolation.
 

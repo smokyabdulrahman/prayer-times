@@ -39,3 +39,5 @@ dist/
 .opencode/local/
 .agents
 skills-lock.json
+
+.DS_Store
